@@ -16,7 +16,7 @@ func Execute() error {
 		return err
 	}
 
-	fmt.Printf("%+v", config)
+	fmt.Printf("%+v\n", config)
 
 	return errors.New("not yet implemented")
 }

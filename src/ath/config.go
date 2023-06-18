@@ -74,4 +74,23 @@ type Config struct {
 		NoncedFiles   []string `short:"O" long:"nonced" description:"list of nonced file" default:"index.html"`
 		DefaultPolicy string   `long:"policy" description:"CSP to use" default:"default-src 'self'; style-src 'self' 'nonce-CSP_NONCE'; script-src 'self' 'nonce-CSP_NONCE'"`
 	} `group:"csp-nonce" namespace:"csp"`
+
+	Args struct {
+		Directory string `description:"directory to serve (default: '.')" positional-arg-name:"directory"`
+	} `positional-args:"yes"`
+}
+
+func (c *Config) EnabledCompressions() []Compression {
+	//TODO: should not be recomputed but done only once
+	res := make([]Compression, 0, 3)
+	if c.Compression.NoGZIP == false {
+		res = append(res, GZIP)
+	}
+	if c.Compression.NoDeflate == false {
+		res = append(res, Deflate)
+	}
+	if c.Compression.NoBrotli == false {
+		res = append(res, Brotli)
+	}
+	return res
 }

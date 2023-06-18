@@ -3,6 +3,7 @@ module github.com/atuleu/angular-to-http
 go 1.20
 
 require (
+	github.com/andybalholm/brotli v1.0.5 // indirect
 	github.com/jessevdk/go-flags v1.5.0 // indirect
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/kr/text v0.1.0 // indirect
