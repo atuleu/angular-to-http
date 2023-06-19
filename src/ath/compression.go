@@ -12,18 +12,23 @@ import (
 )
 
 type Compression interface {
+	Wrap(io.Writer) io.Writer
 	Compress(io.Reader) ([]byte, error)
-	WriteEncoding(http.ResponseWriter)
+	WriteEncodingHeader(http.ResponseWriter)
 	AddExtension(string) string
 }
 
 type identity struct{}
 
+func (i identity) Wrap(w io.Writer) io.Writer {
+	return w
+}
+
 func (i identity) Compress(r io.Reader) ([]byte, error) {
 	return ioutil.ReadAll(r)
 }
 
-func (i identity) WriteEncoding(http.ResponseWriter) {
+func (i identity) WriteEncodingHeader(http.ResponseWriter) {
 }
 
 func (i identity) AddExtension(path string) string {
@@ -40,6 +45,10 @@ type compression struct {
 	ext     string
 }
 
+func (c compression) Wrap(w io.Writer) io.Writer {
+	return c.factory(w)
+}
+
 func (c compression) Compress(r io.Reader) ([]byte, error) {
 	buffer := bytes.NewBuffer(nil)
 	comp := c.factory(buffer)
@@ -50,7 +59,7 @@ func (c compression) Compress(r io.Reader) ([]byte, error) {
 	return buffer.Bytes(), nil
 }
 
-func (c compression) WriteEncoding(w http.ResponseWriter) {
+func (c compression) WriteEncodingHeader(w http.ResponseWriter) {
 	w.Header().Set("Content-Encoding", c.name)
 }
 
