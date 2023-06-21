@@ -13,15 +13,45 @@ import (
 	"time"
 )
 
+type RouteFlag int
+
+const (
+	NONCED RouteFlag = 1 << iota
+	CACHEABLE
+	COMPRESSIBLE
+)
+
+func (f RouteFlag) String() string {
+	str := make([]string, 0, 3)
+	if (f & COMPRESSIBLE) != 0 {
+		str = append(str, "COMPRESSIBLE")
+	}
+	if (f & CACHEABLE) != 0 {
+		str = append(str, "CACHEABLE")
+	}
+	if (f & NONCED) != 0 {
+		str = append(str, "NONCED")
+	}
+	return strings.Join(str, ",")
+}
+
 type Route interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 	PreCache()
+	Flags() RouteFlag
 }
 
 type route struct {
 	name               string
 	mime               string
 	enabledCompression []Compression
+}
+
+func (r route) Flags() RouteFlag {
+	if len(r.enabledCompression) > 0 {
+		return COMPRESSIBLE
+	}
+	return 0
 }
 
 type StaticRoute struct {
@@ -34,6 +64,14 @@ type StaticRoute struct {
 	cache Cache
 
 	maxAge int
+}
+
+func (r StaticRoute) Flags() RouteFlag {
+	res := r.route.Flags()
+	if r.maxAge > 0 {
+		return res | CACHEABLE
+	}
+	return res
 }
 
 func (r StaticRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -85,7 +123,7 @@ func (r StaticRoute) readFile(compression Compression) func() ([]byte, error) {
 			return nil, fmt.Errorf("open %s: %w", r.filepath, err)
 		}
 		defer file.Close()
-		res, err := compression.Compress(file)
+		res, err := CompressAll(compression, file)
 		if err != nil {
 			return nil, fmt.Errorf("compressing %s: %w", r.filepath, err)
 		}
@@ -134,6 +172,10 @@ func (r NoncedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 type Nonce struct {
 	Nonce string
+}
+
+func (r NoncedRoute) Flags() RouteFlag {
+	return r.route.Flags() | NONCED
 }
 
 func (r NoncedRoute) PreCache() {}

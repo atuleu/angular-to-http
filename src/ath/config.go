@@ -56,23 +56,23 @@ type Config struct {
 	Port    int    `short:"p" long:"port" description:"port to listen on" default:"80"`
 
 	Compression struct {
-		NoGZIP               bool     `long:"no-gzip" description:"disable gzip compression"`
-		NoDeflate            bool     `long:"no-deflate" description:"disable deflate compression"`
-		NoBrotli             bool     `long:"no-brotli" description:"disable brotli compression"`
-		CompressionThreshold ByteSize `long:"threshold" description:"file size threshold to enable compression" default:"1k"`
+		NoGZIP    bool     `long:"no-gzip" description:"disable gzip compression"`
+		NoDeflate bool     `long:"no-deflate" description:"disable deflate compression"`
+		NoBrotli  bool     `long:"no-brotli" description:"disable brotli compression"`
+		Threshold ByteSize `long:"threshold" description:"file size threshold to enable compression" default:"1k"`
 	} `group:"compression" namespace:"comp"`
 
-	CacheControl struct {
+	Cache struct {
 		MaxAge         time.Duration `long:"max-age" description:"cache max age on cacheable file, i.e. files with an hash" default:"168h" default-mask:"1 week"`
 		Ignore         []string      `short:"N" long:"no-store" description:"additional files to set Cache-Control: no-store"`
 		MaxSize        ByteSize      `short:"m" long:"max-size" description:"maximal size of the cache in bytes" default:"50M"`
 		NoInMemoryRoot bool          `long:"no-in-memory-root" description:"by default all cacheable root file (non-asset files) are always cached in memory, this option disable it and put it in the LRU cache"`
 	} `group:"cache-control" namespace:"cache"`
 
-	CSPNonce struct {
-		Disable       bool     `long:"nonce-disable" description:"Disable CSP Nonce generation"`
-		NoncedFiles   []string `short:"O" long:"nonced" description:"list of nonced file" default:"index.html"`
-		DefaultPolicy string   `long:"policy" description:"CSP to use" default:"default-src 'self'; style-src 'self' 'nonce-CSP_NONCE'; script-src 'self' 'nonce-CSP_NONCE'"`
+	CSP struct {
+		Disable    bool     `long:"nonce-disable" description:"Disable CSP Nonce generation"`
+		NoncedPath []string `short:"O" long:"nonced" description:"list of nonced file" default:"/index.html"`
+		Policy     string   `long:"policy" description:"CSP to use" default:"default-src 'self'; style-src 'self' 'nonce-CSP_NONCE'; script-src 'self' 'nonce-CSP_NONCE'"`
 	} `group:"csp-nonce" namespace:"csp"`
 
 	Args struct {
@@ -83,14 +83,14 @@ type Config struct {
 func (c *Config) EnabledCompressions() []Compression {
 	//TODO: should not be recomputed but done only once
 	res := make([]Compression, 0, 3)
+	if c.Compression.NoBrotli == false {
+		res = append(res, Brotli)
+	}
 	if c.Compression.NoGZIP == false {
 		res = append(res, GZIP)
 	}
 	if c.Compression.NoDeflate == false {
 		res = append(res, Deflate)
-	}
-	if c.Compression.NoBrotli == false {
-		res = append(res, Brotli)
 	}
 	return res
 }

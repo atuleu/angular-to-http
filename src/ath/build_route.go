@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"mime"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"golang.org/x/exp/slices"
@@ -21,15 +22,15 @@ type routeBuilder struct {
 	permanent, sized   Cache
 }
 
-func BuildRoute(config Config) (map[string]Route, error) {
-	tmpl, err := template.New("CSP").Parse(config.CSPNonce.DefaultPolicy)
+func BuildRoutes(config Config) (map[string]Route, error) {
+	tmpl, err := template.New("CSP").Parse(config.CSP.Policy)
 	if err != nil {
 		return nil, err
 	}
 
-	sized := NewCache(int64(config.CacheControl.MaxSize))
+	sized := NewCache(int64(config.Cache.MaxSize))
 	var permanent Cache
-	if config.CacheControl.NoInMemoryRoot == true {
+	if config.Cache.NoInMemoryRoot == true {
 		permanent = sized
 	} else {
 		permanent = NewCache(-1)
@@ -48,7 +49,7 @@ func BuildRoute(config Config) (map[string]Route, error) {
 
 func (b *routeBuilder) buildRoutes() (map[string]Route, error) {
 	res := make(map[string]Route)
-	err := fs.WalkDir(b.root,
+	err := filepath.WalkDir(b.root,
 		func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -73,8 +74,8 @@ var ErrNonNonceable = errors.New("route is not nonceable")
 func (b *routeBuilder) buildRoute(path string, d fs.DirEntry) (string, Route, error) {
 	target := buildTarget(b.root, path)
 
-	if b.config.CSPNonce.Disable != false &&
-		slices.Contains(b.config.CSPNonce.NoncedFiles, target) == true {
+	if b.config.CSP.Disable != false &&
+		slices.Contains(b.config.CSP.NoncedPath, target) == true {
 
 		nonced, err := b.buildNoncedRoute(path)
 		if err == nil {
@@ -142,17 +143,17 @@ func (b *routeBuilder) buildStaticRoute(path string, d fs.DirEntry) (Route, erro
 		route: route{
 			name:               name,
 			mime:               mime,
-			enabledCompression: b.getCompression(mime),
+			enabledCompression: b.getCompression(fileinfo),
 		},
 		filepath: path,
 		modtime:  fileinfo.ModTime(),
 		cache:    b.getCache(path),
-		maxAge:   b.getMaxAge(path, mime),
-	}
+		maxAge:   b.getMaxAge(path),
+	}, nil
 }
 
 func (b *routeBuilder) inRoot(path string) bool {
-	return filepath.Dir(path) == b.root
+	return filepath.Dir(path) == filepath.Clean(b.root)
 }
 
 func (b *routeBuilder) getCache(path string) Cache {
@@ -162,30 +163,37 @@ func (b *routeBuilder) getCache(path string) Cache {
 	return b.sized
 }
 
+var hashRx = regexp.MustCompile(`\A\.[[:xdigit:]]+\z`)
+
 func isVersionned(path string) bool {
 	ext := filepath.Ext(path)
-	midExt := filepath.Ext(ext)
-	return ext != midExt
+	midExt := filepath.Ext(strings.TrimSuffix(path, ext))
+	return hashRx.MatchString(midExt)
 }
 
-func (b *routeBuilder) getMaxAge(path string, mime string) int {
-	if mime == "text/html" && b.inRoot(path) && isVersionned(path) == false {
+func (b *routeBuilder) getMaxAge(path string) int {
+	if filepath.Ext(path) == ".html" && b.inRoot(path) && isVersionned(path) == false {
 		return 0
 	}
-	return int(b.config.CacheControl.MaxAge.Seconds())
+	return int(b.config.Cache.MaxAge.Seconds())
 }
 
 var allowedCompression = map[string]bool{
-	"text/plain":       true,
-	"text/javascript":  true,
-	"text/html":        true,
-	"application/json": true,
-	"image/svg+xml":    true,
+	".txt":         true,
+	".js":          true,
+	".map":         true,
+	".html":        true,
+	".json":        true,
+	".webmanifest": true,
+	".svg":         true,
+	".ttf":         true,
+	".otf":         true,
+	".xml":         true,
 }
 
-func (b *routeBuilder) getCompression(mime string, fileinfo fs.FileInfo) []Compression {
-	if allowedCompression[mime] == true &&
-		fileinfo.Size() >= int64(b.config.Compression.CompressionThreshold) {
+func (b *routeBuilder) getCompression(fileinfo fs.FileInfo) []Compression {
+	if allowedCompression[filepath.Ext(fileinfo.Name())] == true &&
+		fileinfo.Size() >= int64(b.config.Compression.Threshold) {
 		return b.enabledCompression
 	}
 	return nil
