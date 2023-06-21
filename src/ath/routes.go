@@ -52,7 +52,7 @@ func (r StaticRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	comp.WriteEncodingHeader(w)
 
-	http.ServeContent(w, req, r.name, r.modtime, bytes.NewReader(data.([]byte)))
+	http.ServeContent(w, req, r.name, r.modtime, bytes.NewReader(data))
 }
 
 func (r StaticRoute) PreCache() {
@@ -78,8 +78,8 @@ func (r route) findCompression(w http.ResponseWriter, req *http.Request) Compres
 	return Identity
 }
 
-func (r StaticRoute) readFile(compression Compression) func() (any, error) {
-	return func() (any, error) {
+func (r StaticRoute) readFile(compression Compression) func() ([]byte, error) {
+	return func() ([]byte, error) {
 		file, err := os.Open(r.filepath)
 		if err != nil {
 			return nil, fmt.Errorf("open %s: %w", r.filepath, err)
@@ -96,7 +96,7 @@ func (r StaticRoute) readFile(compression Compression) func() (any, error) {
 type NoncedRoute struct {
 	route
 
-	response, csp *template.Template
+	template *template.Template
 }
 
 func (r NoncedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -112,13 +112,13 @@ func (r NoncedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	response := bytes.NewBuffer(nil)
 	csp := bytes.NewBuffer(nil)
 
-	err = r.response.Execute(comp.Wrap(response), nonce)
+	err = r.template.ExecuteTemplate(comp.Wrap(response), "content", nonce)
 	if err != nil {
 		log.Printf("could not execute response template for  %s: %s", r.name, err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	err = r.csp.Execute(csp, nonce)
+	err = r.template.ExecuteTemplate(csp, "CSP", nonce)
 	if err != nil {
 		log.Printf("could not execute CSP template for %s: %s", r.name, err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
