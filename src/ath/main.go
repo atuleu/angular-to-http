@@ -35,10 +35,10 @@ func printRoutes(routes map[string]Route) {
 		targets = append(targets, target)
 		maxLength = Max(maxLength, len(target))
 		wg.Add(1)
-		go func() {
+		go func(route Route) {
 			defer wg.Done()
 			route.PreCache()
-		}()
+		}(route)
 	}
 	sort.Strings(targets)
 

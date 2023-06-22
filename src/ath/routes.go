@@ -5,11 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"text/template"
 	"time"
 )
 
@@ -32,7 +32,7 @@ func (f RouteFlag) String() string {
 	if (f & NONCED) != 0 {
 		str = append(str, "NONCED")
 	}
-	return strings.Join(str, ",")
+	return strings.Join(str, ", ")
 }
 
 type Route interface {
@@ -75,10 +75,10 @@ func (r StaticRoute) Flags() RouteFlag {
 }
 
 func (r StaticRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	comp := r.findCompression(w, req)
+	comp := r.findCompression(req)
 	data, err := r.cache.Get(comp.AddExtension(r.filepath), r.readFile(comp))
 	if err != nil {
-		log.Printf("could not read %s: %s", r.filepath, err)
+		log.Printf("%s", err)
 		http.Error(w, "read error", http.StatusInternalServerError)
 		return
 	}
@@ -101,7 +101,7 @@ func (r StaticRoute) PreCache() {
 	}
 }
 
-func (r route) findCompression(w http.ResponseWriter, req *http.Request) Compression {
+func (r route) findCompression(req *http.Request) Compression {
 	acceptEncoding := req.Header.Get("Accept-Encoding")
 	if len(r.enabledCompression) > 0 && strings.Contains(acceptEncoding, "*") == true {
 		return r.enabledCompression[0]
@@ -120,7 +120,7 @@ func (r StaticRoute) readFile(compression Compression) func() ([]byte, error) {
 	return func() ([]byte, error) {
 		file, err := os.Open(r.filepath)
 		if err != nil {
-			return nil, fmt.Errorf("open %s: %w", r.filepath, err)
+			return nil, err
 		}
 		defer file.Close()
 		res, err := CompressAll(compression, file)
@@ -145,14 +145,14 @@ func (r NoncedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	comp := r.findCompression(w, req)
+	comp := r.findCompression(req)
 
 	response := bytes.NewBuffer(nil)
 	csp := bytes.NewBuffer(nil)
 
 	err = r.template.ExecuteTemplate(comp.Wrap(response), "content", nonce)
 	if err != nil {
-		log.Printf("could not execute response template for  %s: %s", r.name, err)
+		log.Printf("could not execute response template for %s: %s", r.name, err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}

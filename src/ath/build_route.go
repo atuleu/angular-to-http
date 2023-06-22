@@ -3,13 +3,13 @@ package ath
 import (
 	"errors"
 	"fmt"
-	"html/template"
 	"io/fs"
 	"io/ioutil"
 	"mime"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"text/template"
 
 	"golang.org/x/exp/slices"
 )

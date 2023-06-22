@@ -1,6 +1,9 @@
 package ath
 
 import (
+	"errors"
+	"sync"
+
 	. "gopkg.in/check.v1"
 )
 
@@ -67,5 +70,55 @@ func (s *CacheSuite) TestEviction(c *C) {
 	c.Check(hasKey(cache, "b"), Equals, true)
 	c.Check(hasKey(cache, "c"), Equals, false)
 	c.Check(hasKey(cache, "d"), Equals, false)
+}
 
+func (s *CacheSuite) TestGet(c *C) {
+	cache := NewCache(-1)
+	value, err := cache.Get("foo", func() ([]byte, error) {
+		return make([]byte, 1), nil
+	})
+	c.Check(err, IsNil)
+	c.Check(len(value), Equals, 1)
+
+	value, err = cache.Get("foo", func() ([]byte, error) {
+		return make([]byte, 2), nil
+	})
+	c.Check(err, IsNil)
+	c.Check(len(value), Equals, 1)
+
+	value, err = cache.Get("bar", func() ([]byte, error) {
+		return make([]byte, 1), errors.New("oops")
+	})
+
+	c.Check(value, IsNil)
+	c.Check(err, ErrorMatches, "oops")
+}
+
+func (s *CacheSuite) TestGetRaceCondition(c *C) {
+	concurrent := 10
+	cache := NewCache(-1)
+	wg := sync.WaitGroup{}
+	type Result struct {
+		Value []byte
+		Error error
+	}
+	results := make(chan Result)
+
+	for i := 0; i < concurrent; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			value, err := cache.Get("a", func() ([]byte, error) { return make([]byte, 1), nil })
+			results <- Result{value, err}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	for r := range results {
+		c.Check(r.Error, IsNil)
+		c.Check(r.Value, HasLen, 1)
+	}
 }

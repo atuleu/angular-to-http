@@ -5,6 +5,7 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -88,18 +89,36 @@ func (s *CompressionSuite) TestAddExtension(c *C) {
 }
 
 type mockResponseWriter struct {
-	header http.Header
+	header        http.Header
+	buffer        *bytes.Buffer
+	headerWritten bool
+}
+
+func NewMockResponseWritter() *mockResponseWriter {
+	return &mockResponseWriter{header: make(http.Header)}
 }
 
 func (w *mockResponseWriter) Header() http.Header {
 	return w.header
 }
 
-func (w *mockResponseWriter) WriteHeader(int) {
+func (w *mockResponseWriter) WriteHeader(statusCode int) {
+	if w.headerWritten == true {
+		return
+	}
+	defer func() { w.headerWritten = true }()
+	w.buffer = bytes.NewBuffer(nil)
+
+	fmt.Fprintf(w.buffer, "HTTP/1.1 %d Ok\r\n", statusCode)
+	w.header.Write(w.buffer)
+	w.buffer.Write([]byte("\r\n"))
 }
 
 func (w *mockResponseWriter) Write(data []byte) (int, error) {
-	return len(data), nil
+	if w.headerWritten == false {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.buffer.Write(data)
 }
 
 func (s *CompressionSuite) TestWriteHeader(c *C) {
@@ -118,7 +137,7 @@ func (s *CompressionSuite) TestWriteHeader(c *C) {
 		if c.Check(ok, Equals, true, comment) == false {
 			continue
 		}
-		w := &mockResponseWriter{header: make(http.Header)}
+		w := NewMockResponseWritter()
 		comp.WriteEncodingHeader(w)
 		buf := bytes.NewBuffer(nil)
 		w.header.Write(buf)
