@@ -19,15 +19,36 @@ func NewHandler(routes map[string]Route, withInfo bool) *Handler {
 	} else {
 		info = log.New(io.Discard, "", 0)
 	}
+
+	if routes == nil {
+		routes = make(map[string]Route)
+	}
+
 	return &Handler{routes: routes, info: info}
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	h.info.Printf("%s %s from %s as %s", req.Method, req.RequestURI, req.RemoteAddr, req.UserAgent())
-	defer h.info.Println("DONE")
-	route, ok := h.routes[req.RequestURI]
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *loggingResponseWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (h *Handler) ServeHTTP(w_ http.ResponseWriter, req *http.Request) {
+	w := &loggingResponseWriter{w_, 0}
+	defer func() {
+		h.info.Printf("%s \"%s\" from %s as \"%s\": %d",
+			req.Method, req.URL,
+			req.RemoteAddr, req.UserAgent(),
+			w.status)
+	}()
+
+	route, ok := h.routes[req.URL.Path]
 	if ok == false {
-		h.info.Printf("serving '/index.html' instead")
+		h.info.Printf("redirecting to '/index.html'")
 		route, ok = h.routes["/index.html"]
 	}
 

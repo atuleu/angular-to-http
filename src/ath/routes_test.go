@@ -2,17 +2,64 @@ package ath
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"text/template"
 	"time"
 
 	"golang.org/x/exp/constraints"
 	. "gopkg.in/check.v1"
 )
+
+type responseChecker struct {
+	*CheckerInfo
+}
+
+var ResponseMatches = &responseChecker{
+	&CheckerInfo{Name: "ResponseMatches", Params: []string{"value", "regexes"}},
+}
+
+func (checker *responseChecker) Check(params []interface{}, names []string) (result bool, error string) {
+	var value string
+	switch v := params[0].(type) {
+	case string:
+		value = v
+	case []byte:
+		value = string(v)
+	case fmt.Stringer:
+		value = v.String()
+	default:
+		return false, "Value should be []byte, string or Implement fmt.Stringer"
+	}
+
+	var regexes []string
+	switch v := params[1].(type) {
+	case string:
+		regexes = []string{v}
+	case []byte:
+		regexes = []string{string(v)}
+	case []string:
+		regexes = v
+	case [][]byte:
+		regexes = make([]string, len(v))
+		for i, vv := range v {
+			regexes[i] = string(vv)
+		}
+	default:
+		return false, "Regexes should be []string or string"
+	}
+	regex := strings.Join(regexes, "\r\n")
+	rx, err := regexp.Compile(regex)
+	if err != nil {
+		return false, "Can´t compile regex: " + err.Error()
+	}
+	return rx.MatchString(value), ""
+}
 
 type RoutesSuite struct {
 	dir      string
@@ -151,19 +198,23 @@ func (s *RoutesSuite) TestStaticRouteServeHTTP(c *C) {
 	testdata := []struct {
 		Route          StaticRoute
 		AcceptEncoding string
-		Content        string
+		Content        []string
 	}{
 		{
 			Route: StaticRoute{
 				route:    route{"index.html", "text/html; charset=utf-8", nil},
 				filepath: s.filepath,
 			},
-			Content: "HTTP/1.1 200 Ok\r\n" +
-				"Accept-Ranges: bytes\r\n" +
-				"Cache-Control: no-store\r\n" +
-				"Content-Length: 78\r\n" +
-				"Content-Type: text/html; charset=utf-8\r\n" +
-				"Last-Modified: " + t.Format(time.RFC1123) + "\r\n\r\n" + s.content,
+			Content: []string{
+				"HTTP/1.1 200 Ok",
+				"Accept-Ranges: bytes",
+				"Cache-Control: no-store",
+				"Content-Length: 78",
+				"Content-Type: text/html; charset=utf-8",
+				"Last-Modified: " + t.Format(time.RFC1123),
+				"",
+				s.content + `\z`,
+			},
 		},
 		{
 			Route: StaticRoute{
@@ -171,12 +222,16 @@ func (s *RoutesSuite) TestStaticRouteServeHTTP(c *C) {
 				maxAge:   300,
 				filepath: s.filepath,
 			},
-			Content: "HTTP/1.1 200 Ok\r\n" +
-				"Accept-Ranges: bytes\r\n" +
-				"Cache-Control: max-age=300\r\n" +
-				"Content-Length: 78\r\n" +
-				"Content-Type: text/html; charset=utf-8\r\n" +
-				"Last-Modified: " + t.Format(time.RFC1123) + "\r\n\r\n" + s.content,
+			Content: []string{
+				"HTTP/1.1 200 Ok",
+				"Accept-Ranges: bytes",
+				"Cache-Control: max-age=300",
+				"Content-Length: 78",
+				"Content-Type: text/html; charset=utf-8",
+				"Last-Modified: " + t.Format(time.RFC1123),
+				"",
+				s.content + `\z`,
+			},
 		},
 		{
 			Route: StaticRoute{
@@ -184,12 +239,15 @@ func (s *RoutesSuite) TestStaticRouteServeHTTP(c *C) {
 				filepath: s.filepath,
 			},
 			AcceptEncoding: "*",
-			Content: "HTTP/1.1 200 Ok\r\n" +
-				"Accept-Ranges: bytes\r\n" +
-				"Cache-Control: no-store\r\n" +
-				"Content-Encoding: gzip\r\n" +
-				"Content-Type: text/html; charset=utf-8\r\n" +
-				"Last-Modified: " + t.Format(time.RFC1123) + "\r\n\r\n",
+			Content: []string{
+				"HTTP/1.1 200 Ok",
+				"Accept-Ranges: bytes",
+				"Cache-Control: no-store",
+				"Content-Encoding: gzip",
+				"Content-Type: text/html; charset=utf-8",
+				"Last-Modified: " + t.Format(time.RFC1123),
+				"",
+			},
 		},
 		{
 			Route: StaticRoute{
@@ -197,12 +255,15 @@ func (s *RoutesSuite) TestStaticRouteServeHTTP(c *C) {
 				filepath: s.filepath,
 			},
 			AcceptEncoding: "br",
-			Content: "HTTP/1.1 200 Ok\r\n" +
-				"Accept-Ranges: bytes\r\n" +
-				"Cache-Control: no-store\r\n" +
-				"Content-Encoding: br\r\n" +
-				"Content-Type: text/html; charset=utf-8\r\n" +
-				"Last-Modified: " + t.Format(time.RFC1123) + "\r\n\r\n",
+			Content: []string{
+				"HTTP/1.1 200 Ok",
+				"Accept-Ranges: bytes",
+				"Cache-Control: no-store",
+				"Content-Encoding: br",
+				"Content-Type: text/html; charset=utf-8",
+				"Last-Modified: " + t.Format(time.RFC1123),
+				"",
+			},
 		},
 	}
 	cache := NewCache(1)
@@ -219,8 +280,7 @@ func (s *RoutesSuite) TestStaticRouteServeHTTP(c *C) {
 			continue
 		}
 		d.Route.ServeHTTP(w, req)
-		content := string(w.buffer.Bytes())
-		c.Check(content[:Min(len(d.Content), len(content))], Equals, d.Content)
+		c.Check(w.buffer.Bytes(), ResponseMatches, d.Content)
 	}
 
 }
@@ -268,6 +328,7 @@ func (s *RoutesSuite) TestNoncedRoute(c *C) {
 		"Content-Type: text/html; charset=utf-8\r\n" +
 		"Last-Modified: .* GMT\r\n\r\n" +
 		"<html><head><script nonce=\"(.*)\"></script></head><body></body></html>")
+
 	c.Log(string(w.buffer.Bytes()))
 	m := rx.FindAllStringSubmatch(string(w.buffer.Bytes()), -1)
 	c.Assert(len(m), Equals, 1)
@@ -293,31 +354,28 @@ func (s *RoutesSuite) TestNoncedRouteFailure(c *C) {
 	log.SetOutput(logBuffer)
 
 	r.ServeHTTP(w, req)
-	c.Check(string(w.buffer.Bytes()), Equals, "HTTP/1.1 500 Ok\r\n"+
-		"Content-Type: text/plain; charset=utf-8\r\n"+
-		"X-Content-Type-Options: nosniff\r\n"+
-		"\r\n"+
-		"internal server error\n")
+	c.Check(w.buffer.Bytes(), ResponseMatches, []string{"HTTP/1.1 500 Ok",
+		"Content-Type: text/plain; charset=utf-8",
+		"X-Content-Type-Options: nosniff",
+		"",
+		"internal server error"})
 
-	rx := regexp.MustCompile(`\Q[WARNING]\E could not execute response template for index\.html: template: content:.*: executing "content" at <\.N>`)
-	c.Log(string(logBuffer.Bytes()))
-	c.Check(rx.Match(logBuffer.Bytes()), Equals, true)
+	c.Check(logBuffer.Bytes(), ResponseMatches, `\Q[WARNING]\E could not execute response template for index\.html: template: content:.*: executing "content" at <\.N>`)
 
 	tmpl = template.Must(tmpl.New("content").Parse(`<html><head><script nonce="{{.Nonce}}"></script></head><body></body></html>`))
 	r.template = tmpl
+
 	w = NewMockResponseWritter()
 	logBuffer = bytes.NewBuffer(nil)
 	log.SetOutput(logBuffer)
 
 	r.ServeHTTP(w, req)
-	c.Check(string(w.buffer.Bytes()), Equals, "HTTP/1.1 500 Ok\r\n"+
-		"Content-Type: text/plain; charset=utf-8\r\n"+
-		"X-Content-Type-Options: nosniff\r\n"+
-		"\r\n"+
-		"internal server error\n")
+	c.Check(w.buffer.Bytes(), ResponseMatches, []string{"HTTP/1.1 500 Ok",
+		"Content-Type: text/plain; charset=utf-8",
+		"X-Content-Type-Options: nosniff",
+		"",
+		"internal server error"})
 
-	rx = regexp.MustCompile(`\Q[WARNING]\E could not execute CSP template for index\.html: template: CSP:.*: executing "CSP" at <\.N>`)
-	c.Log(string(logBuffer.Bytes()))
-	c.Check(rx.Match(logBuffer.Bytes()), Equals, true)
+	c.Check(logBuffer.Bytes(), ResponseMatches, `\Q[WARNING]\E could not execute CSP template for index\.html: template: CSP:.*: executing "CSP" at <\.N>`)
 
 }

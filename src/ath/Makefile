@@ -1,5 +1,5 @@
 check:
-	go test -race -coverprofile=cover.out
+	go test -coverprofile=cover.out
 
 check-race:
 	go test -race
