@@ -1,0 +1,51 @@
+name: Go - CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+
+jobs:
+  build-test-cover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version-file: go.mod
+
+      - name: Get coverage tool
+        run: |
+          go get golang.org/x/tools/cmd/cover
+
+      - name: Test
+        run: |
+          cd src/ath
+          go test -coverprofile cover.out
+          go tool cover -func cover.out > covered.txt
+
+      - name: Get coverage
+        id: coverage
+        run: |
+          for word in $(tail -n 1 src/ath/covered.txt); do total_percent=$word; done
+          echo "total=$total_percent" >> "$GITHUB_OUTPUT"
+          echo "value=$(echo $total_percent | sed 's/\(\.[0-9]\+\)\?%//')" >> "$GITHUB_OUTPUT"
+
+      - name: Create Coverage Badge
+        uses: schneegans/dynamic-badges-action@v1.6.0
+        if: github.event_name != 'pull_request'
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: eda3658d1543e5a68a2070a33ba73ddd
+          filename: coverage.json
+          label: Coverage
+          message: ${{steps.coverage.outputs.total}}
+          valColorRange: ${{steps.coverage.outputs.value}}
+          minColorRange: 50
+          maxColorRange: 90
+          style: flat
