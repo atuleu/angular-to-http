@@ -60,7 +60,7 @@ type Config struct {
 		NoDeflate bool     `long:"no-deflate" description:"disable deflate compression"`
 		NoBrotli  bool     `long:"no-brotli" description:"disable brotli compression"`
 		Threshold ByteSize `long:"threshold" description:"file size threshold to enable compression" default:"1k"`
-	} `group:"compression" namespace:"comp"`
+	} `group:"compression" namespace:"compression"`
 
 	Cache struct {
 		MaxAge         time.Duration `long:"max-age" description:"cache max age on cacheable file, i.e. files with an hash" default:"168h" default-mask:"1 week"`

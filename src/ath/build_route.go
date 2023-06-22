@@ -17,13 +17,14 @@ import (
 type routeBuilder struct {
 	root               string
 	config             Config
-	t                  *template.Template
+	template           *template.Template
 	enabledCompression []Compression
 	permanent, sized   Cache
 }
 
 func BuildRoutes(config Config) (map[string]Route, error) {
-	tmpl, err := template.New("CSP").Parse(config.CSP.Policy)
+	policy := strings.ReplaceAll(config.CSP.Policy, "CSP_NONCE", "{{.Nonce}}")
+	tmpl, err := template.New("CSP").Parse(policy)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +40,7 @@ func BuildRoutes(config Config) (map[string]Route, error) {
 	return (&routeBuilder{
 		root:               config.Args.Directory,
 		config:             config,
-		t:                  tmpl,
+		template:           tmpl,
 		enabledCompression: config.EnabledCompressions(),
 		permanent:          permanent,
 		sized:              sized,
@@ -74,9 +75,8 @@ var ErrNonNonceable = errors.New("route is not nonceable")
 func (b *routeBuilder) buildRoute(path string, d fs.DirEntry) (string, Route, error) {
 	target := buildTarget(b.root, path)
 
-	if b.config.CSP.Disable != false &&
+	if b.config.CSP.Disable == false &&
 		slices.Contains(b.config.CSP.NoncedPath, target) == true {
-
 		nonced, err := b.buildNoncedRoute(path)
 		if err == nil {
 			return target, nonced, nil
@@ -102,17 +102,17 @@ func (b *routeBuilder) buildNoncedRoute(path string) (Route, error) {
 	}
 	content := string(content_)
 
-	if strings.Contains(content, "CSP_NONCE") == false {
+	if strings.Contains(content, "ng_csp_nonced") == false {
 		return nil, ErrNonNonceable
 	}
 
-	templ, err := b.t.Clone()
+	templ, err := b.template.Clone()
 	if err != nil {
 		return nil, err
 	}
 
-	templ, err = template.New("content").Parse(strings.ReplaceAll(content,
-		"CSP_NONCE", "{{.Nonce}}"))
+	templ, err = templ.New("content").Parse(strings.ReplaceAll(content,
+		"ng_csp_nonced", "ngCspNonce=\"{{.Nonce}}\""))
 	if err != nil {
 		return nil, err
 	}
