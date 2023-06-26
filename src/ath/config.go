@@ -54,6 +54,7 @@ func (s *ByteSize) UnmarshalFlag(value string) error {
 type Config struct {
 	Address string `short:"a" long:"address" description:"address to listen to" default:"0.0.0.0"`
 	Port    int    `short:"p" long:"port" description:"port to listen on" default:"80"`
+	Verbose bool   `short:"v" long:"verbose" description:"Enable verbose logging for each request"`
 
 	Compression struct {
 		NoGZIP    bool     `long:"no-gzip" description:"disable gzip compression"`

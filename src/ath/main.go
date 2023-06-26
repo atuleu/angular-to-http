@@ -73,5 +73,5 @@ func Execute() error {
 		return err
 	}
 
-	return http.Serve(listen, NewHandler(routes, true))
+	return http.Serve(listen, NewHandler(routes, config.Verbose))
 }
