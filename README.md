@@ -7,10 +7,10 @@ Lightweight zero-configuration SPA HTTP server that do not compromise on securit
 
 ## Benefit
 
-* Zero-configuration in Docker compared to classic http server (nginx, Apache)
+* Zero-configuration in Docker compared to a classic http server (nginx, Apache)
 * Produced images are small (an order of magnitude compared to Nginx)
-* Cache limit are expressed in memory size footprint of assets, not number of cached data. You can target reliably a given memory usage with your containers.
-* Do not sacrifice security. Configure a nonce on your files if they contain a magic pattern
+* Cache limit are expressed in memory size footprint of assets, not number of cached data. You can reliably target a wanted memory usage with your containers.
+* Do not sacrifice security. Configure a nonce on your `index.html` files if they contain a magic pattern.
 * Supports file compression (go green on Lighthouse)
 
 ## Hello World and Usage
@@ -44,6 +44,14 @@ This is lilely where a very minimal configuration should be done. If a nonceable
  * `randomNonce` will be a base64 cryptographic-strong 32 bytes random number generated for each request to a nonced files.
 
 So to enable the default CSP described [here](https://angular.io/guide/security#content-security-policy) for your angular app, one would simply replace in its `src/index.html` its `<app-root></app-root>` with `<app-root ng_csp_nonced></app-root>`.
+
+## Cache-Control strategies
+
+Any served files will fall into three categories regarding cache-control.
+
+* Nonced files, which are unique for each request, will use a `no-store` configuration.
+* Versionned files, i.e. containing an hexadecimal hash or a version number ( `style.abcdef.css` or `logo.v123.png`) will be served with `max-age=31536000; immutable`
+* Other files, will be served with `max-age=0; must-revalidate` by default. max-age could manually be increased. All files will be served with `Last-Modified` to the Modtime of the file for revalidation.
 
 ## Options
 
