@@ -19,6 +19,7 @@ type routeBuilder struct {
 	config             Config
 	template           *template.Template
 	enabledCompression []Compression
+	allowedCompression map[string]bool
 	permanent, sized   Cache
 }
 
@@ -29,9 +30,9 @@ func BuildRoutes(config Config) (map[string]Route, error) {
 		return nil, err
 	}
 
-	sized := NewCache(int64(config.Cache.MaxSize))
+	sized := NewCache(int64(config.ServerCache.MaxMemorySize))
 	var permanent Cache
-	if config.Cache.NoInMemoryRoot == true {
+	if config.ServerCache.RootFileInLRU == true {
 		permanent = sized
 	} else {
 		permanent = NewCache(-1)
@@ -42,6 +43,7 @@ func BuildRoutes(config Config) (map[string]Route, error) {
 		config:             config,
 		template:           tmpl,
 		enabledCompression: config.EnabledCompressions(),
+		allowedCompression: config.AllowedCompressions(),
 		permanent:          permanent,
 		sized:              sized,
 	}).buildRoutes()
@@ -145,10 +147,10 @@ func (b *routeBuilder) buildStaticRoute(path string, d fs.DirEntry) (Route, erro
 			mime:               mime,
 			enabledCompression: b.getCompression(fileinfo),
 		},
-		filepath: path,
-		modtime:  fileinfo.ModTime(),
-		cache:    b.getCache(path),
-		maxAge:   b.getMaxAge(path),
+		filepath:     path,
+		modtime:      fileinfo.ModTime(),
+		cache:        b.getCache(path),
+		cacheControl: b.getCacheControl(path),
 	}, nil
 }
 
@@ -163,36 +165,32 @@ func (b *routeBuilder) getCache(path string) Cache {
 	return b.sized
 }
 
-var hashRx = regexp.MustCompile(`\A\.[[:xdigit:]]+\z`)
+var hashOrVersionRx = regexp.MustCompile(`\A(\.[[:xdigit:]]+|\.v[0-9]+)\z`)
 
 func isVersionned(path string) bool {
 	ext := filepath.Ext(path)
 	midExt := filepath.Ext(strings.TrimSuffix(path, ext))
-	return hashRx.MatchString(midExt)
+	return hashOrVersionRx.MatchString(midExt)
 }
 
-func (b *routeBuilder) getMaxAge(path string) int {
-	if filepath.Ext(path) == ".html" && b.inRoot(path) && isVersionned(path) == false {
-		return 0
+func (b *routeBuilder) getCacheControl(path string) string {
+	if isVersionned(path) == true {
+		return "max-age=31536000; immutable"
 	}
-	return int(b.config.Cache.MaxAge.Seconds())
-}
-
-var allowedCompression = map[string]bool{
-	".txt":         true,
-	".js":          true,
-	".map":         true,
-	".html":        true,
-	".json":        true,
-	".webmanifest": true,
-	".svg":         true,
-	".ttf":         true,
-	".otf":         true,
-	".xml":         true,
+	if b.config.Cache.MaxAge <= 0 {
+		return "no-cache"
+	}
+	return fmt.Sprintf("max-age=%d; must-revalidate", b.config.Cache.MaxAge)
 }
 
 func (b *routeBuilder) getCompression(fileinfo fs.FileInfo) []Compression {
-	if allowedCompression[filepath.Ext(fileinfo.Name())] == true &&
+	filename := fileinfo.Name()
+	ext := filepath.Ext(filename)
+	if ext == ".map" && strings.HasSuffix(filename, ".js.map") {
+		ext = ".js.map"
+	}
+
+	if b.allowedCompression[ext] == true &&
 		fileinfo.Size() >= int64(b.config.Compression.Threshold) {
 		return b.enabledCompression
 	}

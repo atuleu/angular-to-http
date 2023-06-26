@@ -37,13 +37,13 @@ func (s *BuildRoutesSuite) TestDefaultApplication(c *C) {
 	c.Assert(err, IsNil)
 	checkRoutes(c, routes, map[string]RouteFlag{
 		"/index.html":                    COMPRESSIBLE,
-		"/3rdpartylicenses.txt":          COMPRESSIBLE | CACHEABLE,
-		"/main.d9c155841b368d1f.js":      COMPRESSIBLE | CACHEABLE,
-		"/polyfills.3f5925aa1897dcef.js": COMPRESSIBLE | CACHEABLE,
-		"/favicon.ico":                   CACHEABLE,
-		"/assets/random.svg":             COMPRESSIBLE | CACHEABLE,
-		"/runtime.5ba494be3870c376.js":   COMPRESSIBLE | CACHEABLE,
-		"/styles.ef46db3751d8e999.css":   CACHEABLE,
+		"/3rdpartylicenses.txt":          COMPRESSIBLE,
+		"/main.d9c155841b368d1f.js":      COMPRESSIBLE | IMMUTABLE,
+		"/polyfills.3f5925aa1897dcef.js": COMPRESSIBLE | IMMUTABLE,
+		"/favicon.ico":                   0,
+		"/assets/random.svg":             COMPRESSIBLE,
+		"/runtime.5ba494be3870c376.js":   COMPRESSIBLE | IMMUTABLE,
+		"/styles.ef46db3751d8e999.css":   IMMUTABLE,
 	})
 
 }
@@ -56,13 +56,13 @@ func (s *BuildRoutesSuite) TestNoncedApplication(c *C) {
 	c.Assert(err, IsNil)
 	checkRoutes(c, routes, map[string]RouteFlag{
 		"/index.html":                    COMPRESSIBLE | NONCED,
-		"/3rdpartylicenses.txt":          COMPRESSIBLE | CACHEABLE,
-		"/main.d9c155841b368d1f.js":      COMPRESSIBLE | CACHEABLE,
-		"/polyfills.3f5925aa1897dcef.js": COMPRESSIBLE | CACHEABLE,
-		"/favicon.ico":                   CACHEABLE,
-		"/assets/random.svg":             COMPRESSIBLE | CACHEABLE,
-		"/runtime.5ba494be3870c376.js":   COMPRESSIBLE | CACHEABLE,
-		"/styles.ef46db3751d8e999.css":   CACHEABLE,
+		"/3rdpartylicenses.txt":          COMPRESSIBLE,
+		"/main.d9c155841b368d1f.js":      COMPRESSIBLE | IMMUTABLE,
+		"/polyfills.3f5925aa1897dcef.js": COMPRESSIBLE | IMMUTABLE,
+		"/favicon.ico":                   0,
+		"/assets/random.svg":             COMPRESSIBLE,
+		"/runtime.5ba494be3870c376.js":   COMPRESSIBLE | IMMUTABLE,
+		"/styles.ef46db3751d8e999.css":   IMMUTABLE,
 	})
 
 	index, ok := routes["/index.html"]

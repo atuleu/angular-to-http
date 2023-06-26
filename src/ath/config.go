@@ -59,15 +59,18 @@ type Config struct {
 		NoGZIP    bool     `long:"no-gzip" description:"disable gzip compression"`
 		NoDeflate bool     `long:"no-deflate" description:"disable deflate compression"`
 		NoBrotli  bool     `long:"no-brotli" description:"disable brotli compression"`
+		Eligible  []string `long:"elligible" description:"list of extension to determine files elligible for compression" default:"txt" default:"js" default:"js.map" default:"html" default:"webmanifest" default:"svg" default:"ttf" default:"otf" default:"xml"`
 		Threshold ByteSize `long:"threshold" description:"file size threshold to enable compression" default:"1k"`
 	} `group:"compression" namespace:"compression"`
 
 	Cache struct {
-		MaxAge         time.Duration `long:"max-age" description:"cache max age on cacheable file, i.e. files with an hash" default:"168h" default-mask:"1 week"`
-		Ignore         []string      `short:"N" long:"no-store" description:"additional files to set Cache-Control: no-store"`
-		MaxSize        ByteSize      `short:"m" long:"max-size" description:"maximal size of the cache in bytes" default:"50M"`
-		NoInMemoryRoot bool          `long:"no-in-memory-root" description:"by default all cacheable root file (non-asset files) are always cached in memory, this option disable it and put it in the LRU cache"`
+		MaxAge time.Duration `long:"max-age" description:"Cache-Control max-age on unversionned files" default:"0s"`
 	} `group:"cache-control" namespace:"cache"`
+
+	ServerCache struct {
+		RootFileInLRU bool     `long:"root-files-in-lru" description:"by default all cacheable root file (non-asset files) are always cached in memory, this option disable it and put it in the LRU cache like other assets"`
+		MaxMemorySize ByteSize `short:"m" long:"max-size" description:"maximal size of the cache in bytes" default:"50M"`
+	} `group:"server-cache" namespace:"server-cache"`
 
 	CSP struct {
 		Disable    bool     `long:"nonce-disable" description:"Disable CSP Nonce generation"`
@@ -91,6 +94,14 @@ func (c *Config) EnabledCompressions() []Compression {
 	}
 	if c.Compression.NoDeflate == false {
 		res = append(res, Deflate)
+	}
+	return res
+}
+
+func (c *Config) AllowedCompressions() map[string]bool {
+	res := make(map[string]bool)
+	for _, ext := range c.Compression.Eligible {
+		res["."+ext] = true
 	}
 	return res
 }

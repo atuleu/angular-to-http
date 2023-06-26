@@ -88,10 +88,10 @@ func (s *RoutesSuite) TestRouteFlags(c *C) {
 		Expected string
 	}{
 		{COMPRESSIBLE, "COMPRESSIBLE"},
-		{CACHEABLE, "CACHEABLE"},
+		{IMMUTABLE, "IMMUTABLE"},
 		{NONCED, "NONCED"},
 		{NONCED | COMPRESSIBLE, "COMPRESSIBLE, NONCED"},
-		{CACHEABLE | COMPRESSIBLE, "COMPRESSIBLE, CACHEABLE"},
+		{IMMUTABLE | COMPRESSIBLE, "COMPRESSIBLE, IMMUTABLE"},
 	}
 
 	for _, d := range testdata {
@@ -106,27 +106,27 @@ func (s *RoutesSuite) TestRouteRouteFlags(c *C) {
 	}{
 		{
 			StaticRoute{
-				route:  route{"index.html", "text/html; charset:utf-8", nil},
-				maxAge: 0},
+				route: route{"index.html", "text/html; charset:utf-8", nil},
+			},
 			0,
 		},
 		{
 			StaticRoute{
-				route:  route{"index.html", "text/html; charset:utf-8", []Compression{GZIP}},
-				maxAge: 0},
+				route: route{"index.html", "text/html; charset:utf-8", []Compression{GZIP}},
+			},
 			COMPRESSIBLE,
 		},
 		{
 			StaticRoute{
-				route:  route{"index.html", "text/html; charset:utf-8", nil},
-				maxAge: 100},
-			CACHEABLE,
+				route:        route{"index.html", "text/html; charset:utf-8", nil},
+				cacheControl: "max-age=10; immutable"},
+			IMMUTABLE,
 		},
 		{
 			StaticRoute{
-				route:  route{"index.html", "text/html; charset:utf-8", []Compression{GZIP}},
-				maxAge: 100},
-			COMPRESSIBLE | CACHEABLE,
+				route:        route{"index.html", "text/html; charset:utf-8", []Compression{GZIP}},
+				cacheControl: "max-age=10; immutable"},
+			COMPRESSIBLE | IMMUTABLE,
 		},
 		{
 			NoncedRoute{
@@ -202,13 +202,14 @@ func (s *RoutesSuite) TestStaticRouteServeHTTP(c *C) {
 	}{
 		{
 			Route: StaticRoute{
-				route:    route{"index.html", "text/html; charset=utf-8", nil},
-				filepath: s.filepath,
+				route:        route{"index.html", "text/html; charset=utf-8", nil},
+				filepath:     s.filepath,
+				cacheControl: "no-cache",
 			},
 			Content: []string{
 				"HTTP/1.1 200 Ok",
 				"Accept-Ranges: bytes",
-				"Cache-Control: no-store",
+				"Cache-Control: no-cache",
 				"Content-Length: 78",
 				"Content-Type: text/html; charset=utf-8",
 				"Last-Modified: " + t.Format(time.RFC1123),
@@ -218,9 +219,9 @@ func (s *RoutesSuite) TestStaticRouteServeHTTP(c *C) {
 		},
 		{
 			Route: StaticRoute{
-				route:    route{"index.html", "text/html; charset=utf-8", nil},
-				maxAge:   300,
-				filepath: s.filepath,
+				route:        route{"index.html", "text/html; charset=utf-8", nil},
+				cacheControl: "max-age=300",
+				filepath:     s.filepath,
 			},
 			Content: []string{
 				"HTTP/1.1 200 Ok",
@@ -242,7 +243,6 @@ func (s *RoutesSuite) TestStaticRouteServeHTTP(c *C) {
 			Content: []string{
 				"HTTP/1.1 200 Ok",
 				"Accept-Ranges: bytes",
-				"Cache-Control: no-store",
 				"Content-Encoding: gzip",
 				"Content-Type: text/html; charset=utf-8",
 				"Last-Modified: " + t.Format(time.RFC1123),
@@ -258,7 +258,6 @@ func (s *RoutesSuite) TestStaticRouteServeHTTP(c *C) {
 			Content: []string{
 				"HTTP/1.1 200 Ok",
 				"Accept-Ranges: bytes",
-				"Cache-Control: no-store",
 				"Content-Encoding: br",
 				"Content-Type: text/html; charset=utf-8",
 				"Last-Modified: " + t.Format(time.RFC1123),
@@ -280,7 +279,7 @@ func (s *RoutesSuite) TestStaticRouteServeHTTP(c *C) {
 			continue
 		}
 		d.Route.ServeHTTP(w, req)
-		c.Check(w.buffer.Bytes(), ResponseMatches, d.Content)
+		c.Check(string(w.buffer.Bytes()), ResponseMatches, d.Content)
 	}
 
 }

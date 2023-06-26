@@ -17,7 +17,7 @@ type RouteFlag int
 
 const (
 	NONCED RouteFlag = 1 << iota
-	CACHEABLE
+	IMMUTABLE
 	COMPRESSIBLE
 )
 
@@ -26,8 +26,8 @@ func (f RouteFlag) String() string {
 	if (f & COMPRESSIBLE) != 0 {
 		str = append(str, "COMPRESSIBLE")
 	}
-	if (f & CACHEABLE) != 0 {
-		str = append(str, "CACHEABLE")
+	if (f & IMMUTABLE) != 0 {
+		str = append(str, "IMMUTABLE")
 	}
 	if (f & NONCED) != 0 {
 		str = append(str, "NONCED")
@@ -61,15 +61,14 @@ type StaticRoute struct {
 
 	modtime time.Time
 
-	cache Cache
-
-	maxAge int
+	cache        Cache
+	cacheControl string
 }
 
 func (r StaticRoute) Flags() RouteFlag {
 	res := r.route.Flags()
-	if r.maxAge > 0 {
-		return res | CACHEABLE
+	if strings.Contains(r.cacheControl, "immutable") {
+		return res | IMMUTABLE
 	}
 	return res
 }
@@ -83,10 +82,8 @@ func (r StaticRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if r.maxAge > 0 {
-		w.Header().Add("Cache-Control", fmt.Sprintf("max-age=%d", r.maxAge))
-	} else {
-		w.Header().Add("Cache-Control", "no-store")
+	if len(r.cacheControl) > 0 {
+		w.Header().Set("Cache-Control", r.cacheControl)
 	}
 	comp.WriteEncodingHeader(w)
 

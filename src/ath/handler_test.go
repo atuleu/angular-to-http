@@ -79,9 +79,10 @@ func (s *HandlerSuite) TestStaticRoute(c *C) {
 		[]byte(`<html><head/><body/></html>`), 0644), IsNil)
 	routes := map[string]Route{
 		"/index.html": StaticRoute{
-			route:    route{"index.html", "", nil},
-			filepath: filepath.Join(dir, "index.html"),
-			cache:    NewCache(-1),
+			route:        route{"index.html", "", nil},
+			filepath:     filepath.Join(dir, "index.html"),
+			cacheControl: "no-cache",
+			cache:        NewCache(-1),
 		},
 	}
 	h := NewHandler(routes, true)
@@ -97,7 +98,7 @@ func (s *HandlerSuite) TestStaticRoute(c *C) {
 	c.Check(string(w.buffer.Bytes()), ResponseMatches, []string{
 		"HTTP/1.1 200 Ok",
 		"Accept-Ranges: bytes",
-		"Cache-Control: no-store",
+		"Cache-Control: no-cache",
 		"Content-Length: 27",
 		"Content-Type: text/html; charset=utf-8",
 		"",
