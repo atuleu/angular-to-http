@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
+	"errors"
 	"io"
 	"net/http"
 
@@ -83,10 +84,10 @@ var Brotli = compression{
 func CompressAll(compression Compression, r io.Reader) ([]byte, error) {
 	buffer := bytes.NewBuffer(nil)
 	comp := compression.Wrap(buffer)
-	_, err := io.Copy(comp, r)
-	if err != nil {
-		return nil, err
-	}
-	err = comp.Close()
-	return buffer.Bytes(), err
+	_, copyErr := io.Copy(comp, r)
+	closeErr := comp.Close()
+	data := buffer.Bytes()
+	// makes sure the capacity of the returned slice is compacted to the
+	// length of data.
+	return data[0:len(data):len(data)], errors.Join(copyErr, closeErr)
 }
