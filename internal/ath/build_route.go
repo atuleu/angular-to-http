@@ -97,6 +97,8 @@ func (b *routeBuilder) buildRoute(path string, d fs.DirEntry) (string, Route, er
 	return target, route, nil
 }
 
+var ngCspNoncedRx = regexp.MustCompile(`ng_csp_nonced(="[^"]*")?`)
+
 func (b *routeBuilder) buildNoncedRoute(path string) (Route, error) {
 	content_, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -113,8 +115,8 @@ func (b *routeBuilder) buildNoncedRoute(path string) (Route, error) {
 		return nil, err
 	}
 
-	templ, err = templ.New("content").Parse(strings.ReplaceAll(content,
-		"ng_csp_nonced", "ngCspNonce=\"{{.Nonce}}\""))
+	templ, err = templ.New("content").Parse(ngCspNoncedRx.ReplaceAllString(content,
+		"ngCspNonce=\"{{.Nonce}}\""))
 	if err != nil {
 		return nil, err
 	}

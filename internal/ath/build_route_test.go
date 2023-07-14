@@ -82,7 +82,7 @@ func (s *BuildRoutesSuite) TestNoncedApplication(c *C) {
 		"Content-Type: text/html; charset=utf-8",
 		"Last-Modified: .*GMT",
 		"",
-		`.*html.\n<html.*>\n<head>\n  <meta.*\n  <title.*\n  <base .*\n  <meta .*\n  <link .*\n<link .*\n<body>\n  <app-root ngCspNonce=".*"></app-root>`,
+		`.*html.\n<html.*>\n<head>\n  <meta.*\n  <title.*\n  <base .*\n  <meta .*\n  <link .*\n<link .*\n<body>\n  <app-root ngCspNonce="[^"]+"></app-root>`,
 	})
 
 }
