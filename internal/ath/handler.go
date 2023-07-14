@@ -3,7 +3,7 @@ package ath
 import (
 	"net/http"
 
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 type Handler struct {
@@ -30,20 +30,20 @@ func (w *loggingResponseWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
-func (h *Handler) log(req *http.Request) *logrus.Entry {
-	return logrus.WithFields(logrus.Fields{
-		"method":     req.Method,
-		"URL":        req.URL,
-		"address":    req.RemoteAddr,
-		"user-agent": req.UserAgent(),
-	})
+func (h *Handler) log(req *http.Request) *zap.Logger {
+	return zap.L().With(
+		zap.String("method", req.Method),
+		zap.String("URL", req.URL.String()),
+		zap.String("address", req.RemoteAddr),
+		zap.String("user-agent", req.UserAgent()),
+	)
 }
 
 func (h *Handler) ServeHTTP(w_ http.ResponseWriter, req *http.Request) {
 	w := &loggingResponseWriter{w_, 0}
 	log := h.log(req)
 	defer func() {
-		log.WithField("status", w.status).Info("request")
+		log.Info("request", zap.Int("status", w.status))
 	}()
 
 	route, ok := h.routes[req.URL.Path]
@@ -58,8 +58,4 @@ func (h *Handler) ServeHTTP(w_ http.ResponseWriter, req *http.Request) {
 	}
 
 	route.ServeHTTP(w, req)
-}
-
-func init() {
-	logrus.SetLevel(logrus.WarnLevel)
 }

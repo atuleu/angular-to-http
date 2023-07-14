@@ -12,8 +12,9 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/sirupsen/logrus"
-	"github.com/sirupsen/logrus/hooks/test"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	"golang.org/x/exp/constraints"
 	. "gopkg.in/check.v1"
 )
@@ -67,7 +68,8 @@ type RoutesSuite struct {
 	dir      string
 	filepath string
 	content  string
-	hook     *test.Hook
+	logs     *observer.ObservedLogs
+	restore  func()
 }
 
 var _ = Suite(&RoutesSuite{})
@@ -83,12 +85,20 @@ func (s *RoutesSuite) SetUpSuite(c *C) {
 </html>`
 	s.filepath = filepath.Join(s.dir, "index.html")
 	c.Assert(ioutil.WriteFile(s.filepath, []byte(s.content), 0644), IsNil)
-	_, s.hook = test.NewNullLogger()
-	logrus.AddHook(s.hook)
 }
 
 func (s *RoutesSuite) SetUpTest(c *C) {
-	s.hook.Reset()
+	var core zapcore.Core
+	core, s.logs = observer.New(zapcore.WarnLevel)
+	log, err := zap.NewProduction(zap.WrapCore(func(zapcore.Core) zapcore.Core {
+		return core
+	}))
+	c.Assert(err, IsNil)
+	s.restore = zap.ReplaceGlobals(log)
+}
+
+func (s *RoutesSuite) TearDownTest(c *C) {
+	s.restore()
 }
 
 func (s *RoutesSuite) TestRouteFlags(c *C) {
@@ -309,13 +319,16 @@ func (s *RoutesSuite) TestStaticRouteFailure(c *C) {
 		"\r\n"+
 		"read error\n")
 
-	c.Assert(s.hook.Entries, HasLen, 1)
-	c.Check(s.hook.Entries[0].Level, Equals, logrus.ErrorLevel)
-	c.Check(s.hook.Entries[0].Message, Matches, "could not read route")
-	c.Check(s.hook.Entries[0].Data["error"], ErrorMatches, `open .*: no such file or directory`)
-	c.Check(s.hook.Entries[0].Data["filepath"], Matches, ".*/do-not-exists")
-	c.Check(s.hook.Entries[0].Data["compression"], Matches, "")
-
+	c.Assert(s.logs.All(), HasLen, 1)
+	c.Check(s.logs.All()[0].Level, Equals, zapcore.WarnLevel)
+	c.Check(s.logs.All()[0].Message, Matches, "could not read route")
+	c.Assert(s.logs.All()[0].Context, HasLen, 3)
+	c.Check(s.logs.All()[0].Context[0].Key, Equals, "filepath")
+	c.Check(s.logs.All()[0].Context[0].String, Matches, ".*/do-not-exists")
+	c.Check(s.logs.All()[0].Context[1].Key, Equals, "compression")
+	c.Check(s.logs.All()[0].Context[1].String, Matches, "")
+	c.Check(s.logs.All()[0].Context[2].Key, Equals, "error")
+	c.Check(s.logs.All()[0].Context[2].Interface, ErrorMatches, "open .*: no such file or directory")
 }
 
 func (s *RoutesSuite) TestNoncedRoute(c *C) {
@@ -407,17 +420,19 @@ func (s *RoutesSuite) TestNoncedRouteFailure(c *C) {
 		"",
 		"internal server error"})
 
-	c.Assert(s.hook.Entries, HasLen, 1)
-	c.Check(s.hook.Entries[0].Level, Equals, logrus.ErrorLevel)
-	c.Check(s.hook.Entries[0].Message, Matches, "could not execute response template")
-	c.Check(s.hook.Entries[0].Data["error"], ErrorMatches, `template: content:.*: executing "content" at \<\.N\>: .*`)
-	c.Check(s.hook.Entries[0].Data["route"], Matches, `index.html`)
+	logs := s.logs.TakeAll()
+	c.Assert(logs, HasLen, 1)
+	c.Check(logs[0].Level, Equals, zapcore.WarnLevel)
+	c.Check(logs[0].Message, Matches, "could not execute response template")
+	c.Assert(logs[0].Context, HasLen, 2)
+	c.Assert(logs[0].Context[0], Equals, zap.String("route", "index.html"))
+	c.Assert(logs[0].Context[1].Key, Equals, "error")
+	c.Assert(logs[0].Context[1].Interface, ErrorMatches, `template: content:.*: executing "content" at \<\.N\>: .*`)
 
 	tmpl = template.Must(tmpl.New("content").Parse(`<html><head><script nonce="{{.Nonce}}"></script></head><body></body></html>`))
 	r.template = tmpl
 
 	w = NewMockResponseWritter()
-	s.hook.Reset()
 
 	r.ServeHTTP(w, req)
 	c.Check(w.buffer.Bytes(), ResponseMatches, []string{"HTTP/1.1 500 Ok",
@@ -426,10 +441,14 @@ func (s *RoutesSuite) TestNoncedRouteFailure(c *C) {
 		"",
 		"internal server error"})
 
-	c.Assert(s.hook.Entries, HasLen, 1)
-	c.Check(s.hook.Entries[0].Level, Equals, logrus.ErrorLevel)
-	c.Check(s.hook.Entries[0].Message, Matches, "could not execute CSP template")
-	c.Check(s.hook.Entries[0].Data["error"], ErrorMatches, `template: CSP:.*: executing "CSP" at \<\.N\>: .*`)
-	c.Check(s.hook.Entries[0].Data["route"], Matches, `index.html`)
+	logs = s.logs.TakeAll()
+
+	c.Assert(logs, HasLen, 1)
+	c.Check(logs[0].Level, Equals, zapcore.WarnLevel)
+	c.Check(logs[0].Message, Matches, "could not execute CSP template")
+	c.Assert(logs[0].Context, HasLen, 2)
+	c.Assert(logs[0].Context[0], Equals, zap.String("route", "index.html"))
+	c.Assert(logs[0].Context[1].Key, Equals, "error")
+	c.Assert(logs[0].Context[1].Interface, ErrorMatches, `template: CSP:.*: executing "CSP" at \<\.N\>: .*`)
 
 }

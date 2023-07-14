@@ -13,7 +13,7 @@ type ByteSize int64
 
 var prefixes = []string{"", "k", "M", "G", "T"}
 
-func (s ByteSize) MarshalFlag() (string, error) {
+func (s ByteSize) String() string {
 	value := float64(s)
 	var prefix string
 	for _, prefix = range prefixes {
@@ -22,7 +22,11 @@ func (s ByteSize) MarshalFlag() (string, error) {
 		}
 		value /= 1024.0
 	}
-	return fmt.Sprintf("%d%s", int64(value), prefix), nil
+	return fmt.Sprintf("%d%s", int64(value), prefix)
+}
+
+func (s ByteSize) MarshalFlag() (string, error) {
+	return s.String(), nil
 }
 
 var byteRx = regexp.MustCompile(`\A([+-]{0,1}[[:digit:]]+)([a-zA-Z]*)\z`)

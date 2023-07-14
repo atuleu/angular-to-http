@@ -6,30 +6,31 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/sirupsen/logrus"
-	"github.com/sirupsen/logrus/hooks/test"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	. "gopkg.in/check.v1"
 )
 
 type HandlerSuite struct {
-	hook *test.Hook
+	logs    *observer.ObservedLogs
+	restore func()
 }
 
 var _ = Suite(&HandlerSuite{})
 
-func (s *HandlerSuite) SetUpSuite(c *C) {
-	_, s.hook = test.NewNullLogger()
-	logrus.AddHook(s.hook)
-}
-
 func (s *HandlerSuite) SetUpTest(c *C) {
-	s.hook.Reset()
-	logrus.SetLevel(logrus.InfoLevel)
+	var core zapcore.Core
+	core, s.logs = observer.New(zapcore.InfoLevel)
+	log, err := zap.NewProduction(zap.WrapCore(func(zapcore.Core) zapcore.Core {
+		return core
+	}))
+	c.Assert(err, IsNil)
+	s.restore = zap.ReplaceGlobals(log)
 }
 
 func (s *HandlerSuite) TearDownTest(c *C) {
-	s.hook.Reset()
-	logrus.SetLevel(logrus.WarnLevel)
+	s.restore()
 }
 
 func (s *HandlerSuite) TestEmptyRouting(c *C) {
@@ -49,11 +50,24 @@ func (s *HandlerSuite) TestEmptyRouting(c *C) {
 		"not found",
 	})
 
-	c.Assert(s.hook.Entries, HasLen, 2)
-	c.Check(s.hook.Entries[0].Level, Equals, logrus.InfoLevel)
-	c.Check(s.hook.Entries[0].Message, Matches, "redirecting to '/index.html'")
-	c.Check(s.hook.Entries[1].Level, Equals, logrus.InfoLevel)
-	c.Check(s.hook.Entries[1].Message, Matches, "request")
+	logs := s.logs.TakeAll()
+
+	c.Assert(logs, HasLen, 2)
+	for _, log := range logs {
+		c.Check(log.Level, Equals, zapcore.InfoLevel)
+		if c.Check(len(log.Context) >= 4, Equals, true) == false {
+			continue
+		}
+		c.Check(log.Context[0], Equals, zap.String("method", "GET"))
+		c.Check(log.Context[1], Equals, zap.String("URL", "/"))
+		c.Check(log.Context[2].Key, Equals, "address")
+		c.Check(log.Context[3].Key, Equals, "user-agent")
+	}
+
+	c.Check(logs[0].Message, Matches, "redirecting to '/index.html'")
+	c.Check(logs[1].Message, Matches, "request")
+	c.Assert(logs[1].Context, HasLen, 5)
+	c.Check(logs[1].Context[4], Equals, zap.Int("status", 404))
 
 }
 
@@ -74,13 +88,23 @@ func (s *HandlerSuite) TestPostMethod(c *C) {
 		"not found",
 	})
 
-	c.Assert(s.hook.Entries, HasLen, 2)
+	logs := s.logs.TakeAll()
+	c.Assert(logs, HasLen, 2)
+	for _, log := range logs {
+		c.Check(log.Level, Equals, zapcore.InfoLevel)
+		if c.Check(len(log.Context) >= 4, Equals, true) == false {
+			continue
+		}
+		c.Check(log.Context[0], Equals, zap.String("method", "POST"))
+		c.Check(log.Context[1], Equals, zap.String("URL", "/index.html"))
+		c.Check(log.Context[2].Key, Equals, "address")
+		c.Check(log.Context[3].Key, Equals, "user-agent")
+	}
 
-	c.Check(s.hook.Entries[0].Level, Equals, logrus.InfoLevel)
-	c.Check(s.hook.Entries[0].Message, Matches, "redirecting to '/index.html'")
-	c.Check(s.hook.Entries[1].Level, Equals, logrus.InfoLevel)
-	c.Check(s.hook.Entries[1].Message, Matches, "request")
-	c.Check(s.hook.Entries[1].Data["status"], Equals, 404)
+	c.Check(logs[0].Message, Matches, "redirecting to '/index.html'")
+	c.Check(logs[1].Message, Matches, "request")
+	c.Assert(logs[1].Context, HasLen, 5)
+	c.Check(logs[1].Context[4], Equals, zap.Int("status", 404))
 
 }
 
@@ -113,10 +137,12 @@ func (s *HandlerSuite) TestStaticRoute(c *C) {
 		"",
 		"<html><head/><body/></html>",
 	})
+	logs := s.logs.TakeAll()
 
-	c.Assert(s.hook.Entries, HasLen, 1)
-	c.Check(s.hook.Entries[0].Level, Equals, logrus.InfoLevel)
-	c.Check(s.hook.Entries[0].Message, Matches, "request")
-	c.Check(s.hook.Entries[0].Data["status"], Equals, 200)
+	c.Assert(logs, HasLen, 1)
+	c.Check(logs[0].Level, Equals, zapcore.InfoLevel)
+	c.Check(logs[0].Message, Matches, "request")
+	c.Assert(logs[0].Context, HasLen, 5)
+	c.Check(logs[0].Context[4], Equals, zap.Int("status", 200))
 
 }

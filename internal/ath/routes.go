@@ -11,7 +11,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 type RouteFlag int
@@ -38,7 +38,7 @@ func (f RouteFlag) String() string {
 
 type Route interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
-	PreCache()
+	PreCache() int64
 	Flags() RouteFlag
 }
 
@@ -80,10 +80,11 @@ func (r StaticRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	data, err := r.cache.Get(compFilename, r.readFile(comp))
 	if err != nil {
 
-		logrus.WithError(err).WithFields(logrus.Fields{
-			"filepath":    r.filepath,
-			"compression": comp.AddExtension(""),
-		}).Error("could not read route")
+		zap.L().Warn("could not read route",
+			zap.String("filepath", r.filepath),
+			zap.String("compression", comp.AddExtension("")),
+			zap.Error(err),
+		)
 
 		http.Error(w, "read error", http.StatusInternalServerError)
 		return
@@ -97,12 +98,15 @@ func (r StaticRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	http.ServeContent(w, req, r.name, r.modtime, bytes.NewReader(data))
 }
 
-func (r StaticRoute) PreCache() {
+func (r StaticRoute) PreCache() int64 {
 	compressions := append(r.enabledCompression, Identity)
 
+	var size int64
 	for _, comp := range compressions {
-		r.cache.Get(comp.AddExtension(r.filepath), r.readFile(comp))
+		data, _ := r.cache.Get(comp.AddExtension(r.filepath), r.readFile(comp))
+		size += int64(cap(data))
 	}
+	return size
 }
 
 func (r route) findCompression(req *http.Request) Compression {
@@ -143,10 +147,10 @@ type NoncedRoute struct {
 
 func (r NoncedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	nonce, err := r.generateNonce()
-	log := logrus.WithField("route", r.name)
+	log := zap.L().With(zap.String("route", r.name))
+
 	if err != nil {
-		log.WithError(err).
-			Error("could not generate nonce")
+		log.Warn("could not generate nonce", zap.Error(err))
 
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -160,20 +164,20 @@ func (r NoncedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	compWriter := comp.Wrap(response)
 	err = r.template.ExecuteTemplate(compWriter, "content", nonce)
 	if err != nil {
-		log.WithError(err).Error("could not execute response template")
+		log.Warn("could not execute response template", zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	err = compWriter.Close()
 	if err != nil {
-		log.WithError(err).Error("could not compress response")
+		log.Error("could not compress response", zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	err = r.template.ExecuteTemplate(csp, "CSP", nonce)
 	if err != nil {
-		log.WithError(err).Error("could not execute CSP template")
+		log.Warn("could not execute CSP template", zap.Error(err))
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -193,7 +197,9 @@ func (r NoncedRoute) Flags() RouteFlag {
 	return r.route.Flags() | NONCED
 }
 
-func (r NoncedRoute) PreCache() {}
+func (r NoncedRoute) PreCache() int64 {
+	return 0
+}
 
 func (r NoncedRoute) generateNonce() (Nonce, error) {
 	nonce := make([]byte, 32)
