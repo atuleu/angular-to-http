@@ -2,7 +2,6 @@ package ath
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -13,6 +12,13 @@ import (
 	"time"
 
 	"github.com/jessevdk/go-flags"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/exp/constraints"
@@ -157,8 +163,16 @@ func Execute() error {
 	defer zap.L().Sync()
 
 	if config.Otel.Endpoint != "" {
-		shutdown := setTelemetry(config)
-		defer shutdown(context.Background())
+		shutdown, err := setTelemetry(config)
+		if err == nil {
+			defer shutdown(context.Background())
+		} else {
+			zap.L().Error("could not setup telemetry",
+				zap.String("endpoint", config.Otel.Endpoint),
+				zap.String("serviceName", config.Otel.ServiceName),
+				zap.String("serviceInstanceID", config.Otel.ServiceInstanceID),
+				zap.Error(err))
+		}
 	}
 
 	routes, err := BuildRoutes(config)
@@ -173,12 +187,62 @@ func Execute() error {
 		return err
 	}
 
-	return http.Serve(listen, NewHandler(routes))
+	handler := otelhttp.NewHandler(NewHandler(routes), "",
+		otelhttp.WithSpanNameFormatter(
+			func(operation string, req *http.Request) string {
+				return req.RequestURI
+			}),
+	)
+	return http.Serve(listen, handler)
 }
 
-func setTelemetry(config Config) func(context.Context) error {
+func setTelemetry(config Config) (func(context.Context) error, error) {
+	noop := func(context.Context) error { return nil }
 
-	return func(context.Context) error { return errors.New("Not Yet Implemented") }
+	exporter, err := otlptracegrpc.New(context.Background(),
+		otlptracegrpc.WithEndpoint(config.Otel.Endpoint),
+		otlptracegrpc.WithInsecure(),
+	)
+
+	if err != nil {
+		return noop, nil
+	}
+
+	instanceID := config.Otel.ServiceInstanceID
+	if len(instanceID) == 0 {
+		var err error
+		instanceID, err = os.Hostname()
+		if err != nil {
+			return noop, err
+		}
+	}
+
+	resource, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName(config.Otel.ServiceName),
+			semconv.ServiceVersion("0.2.0"),
+			semconv.ServiceInstanceID(instanceID),
+		),
+	)
+	if err != nil {
+		return noop, err
+	}
+
+	provider := trace.NewTracerProvider(
+		trace.WithBatcher(exporter),
+		trace.WithResource(resource),
+	)
+
+	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(
+		propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		))
+
+	return exporter.Shutdown, nil
 }
 
 func mapLogLevel(level int) zapcore.Level {
