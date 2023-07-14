@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/atuleu/angular-to-http/src/ath"
+	"github.com/atuleu/angular-to-http/internal/ath"
 )
 
 func main() {

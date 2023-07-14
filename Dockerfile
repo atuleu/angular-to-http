@@ -8,12 +8,14 @@ RUN go mod download
 
 COPY . .
 
+WORKDIR /app/cmd/angular-to-http
+
 RUN go build
 
 FROM alpine
 
 WORKDIR /app
 
-COPY --from=build /app/angular-to-http /app
+COPY --from=build /app/cmd/angular-to-http/angular-to-http /app
 
 ENTRYPOINT ["./angular-to-http"]

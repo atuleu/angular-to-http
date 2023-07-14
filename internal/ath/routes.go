@@ -147,12 +147,20 @@ func (r NoncedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	response := bytes.NewBuffer(nil)
 	csp := bytes.NewBuffer(nil)
 
-	err = r.template.ExecuteTemplate(comp.Wrap(response), "content", nonce)
+	compWriter := comp.Wrap(response)
+	err = r.template.ExecuteTemplate(compWriter, "content", nonce)
 	if err != nil {
 		log.Printf("could not execute response template for %s: %s", r.name, err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+	err = compWriter.Close()
+	if err != nil {
+		log.Printf("could not compress response for %s: %s", r.name, err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	err = r.template.ExecuteTemplate(csp, "CSP", nonce)
 	if err != nil {
 		log.Printf("could not execute CSP template for %s: %s", r.name, err)

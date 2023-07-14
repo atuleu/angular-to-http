@@ -8,8 +8,7 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-type BuildRoutesSuite struct {
-}
+type BuildRoutesSuite struct{}
 
 var _ = Suite(&BuildRoutesSuite{})
 

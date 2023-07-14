@@ -2,6 +2,7 @@ package ath
 
 import (
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -334,6 +335,43 @@ func (s *RoutesSuite) TestNoncedRoute(c *C) {
 	c.Assert(len(m[0]), Equals, 4)
 	c.Check(m[0][1], Equals, m[0][2])
 	c.Check(m[0][1], Equals, m[0][3])
+
+}
+
+func (s *RoutesSuite) TestNoncedCompressedRoute(c *C) {
+	tmpl := template.Must(template.New("CSP").Parse(`default-src 'self'; style-src 'self' 'nonce-{{.Nonce}}'; script-src 'self' 'nonce-{{.Nonce}}'`))
+
+	tmpl = template.Must(tmpl.New("content").Parse(`<html><head><script nonce="{{.Nonce}}"></script></head><body></body></html>`))
+
+	r := NoncedRoute{
+		route:    route{"index.html", "text/html; charset=utf-8", []Compression{GZIP}},
+		template: tmpl,
+	}
+
+	w := NewMockResponseWritter()
+	req, err := http.NewRequest("GET", "/index.html", bytes.NewBuffer(nil))
+	req.Header.Add("Accept-Encoding", "*")
+	c.Assert(err, IsNil)
+	r.ServeHTTP(w, req)
+	c.Check(string(w.buffer.Bytes()), ResponseMatches, []string{
+		"HTTP/1.1 200 Ok",
+		"Accept-Ranges: bytes",
+		"Cache-Control: no-store",
+		"Content-Encoding: gzip",
+		"Content-Security-Policy: default-src 'self'; style-src 'self' 'nonce-.*'; script-src 'self' 'nonce-.*'",
+		"Content-Type: text/html; charset=utf-8",
+		"Last-Modified: .*",
+		"",
+	})
+	splits := strings.Split(string(w.buffer.Bytes()), "\r\n\r\n")
+	c.Assert(len(splits), Equals, 2)
+	gzBody, err := gzip.NewReader(bytes.NewBuffer([]byte(splits[1])))
+	c.Assert(err, IsNil)
+	c.Assert(gzBody, Not(IsNil))
+	content, err := ioutil.ReadAll(gzBody)
+	c.Assert(err, IsNil)
+	c.Assert(content, Not(IsNil))
+	c.Check(string(content), Matches, "<html><head><script nonce=\".*\"></script></head><body></body></html>")
 
 }
 

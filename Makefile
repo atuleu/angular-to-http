@@ -1,17 +1,16 @@
 all: angular-to-http check
 
-SRC_FILES := $(filter-out $(wildcard src/ath/*_test.go), $(wildcard src/ath/*.go))
-
-angular-to-http: *.go $(SRC_FILES)
-	go build
+angular-to-http:
+	make -C cmd/angular-to-http
 
 clean:
-	rm -f angular-to-http
+	make -C cmd/angular-to-http clean
+	make -C internal/ath clean
 
 check:
-	make -C src/ath check
+	make -C internal/ath check
 
 check-race:
-	make -C src/ath check-race
+	make -C internal/ath check-race
 
-.PHONY: check clean
+.PHONY: check check-race clean angular-to-http
