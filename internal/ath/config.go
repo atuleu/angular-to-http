@@ -54,7 +54,7 @@ func (s *ByteSize) UnmarshalFlag(value string) error {
 type Config struct {
 	Address string `short:"a" long:"address" description:"address to listen to" default:"0.0.0.0"`
 	Port    int    `short:"p" long:"port" description:"port to listen on" default:"80"`
-	Verbose bool   `short:"v" long:"verbose" description:"Enable verbose logging for each request"`
+	Verbose []bool `short:"v" long:"verbose" description:"Enable verbose logging for each request"`
 
 	Compression struct {
 		NoGZIP    bool     `long:"no-gzip" description:"disable gzip compression"`
@@ -78,6 +78,12 @@ type Config struct {
 		NoncedPath []string `short:"O" long:"nonced" description:"list of nonced file" default:"/index.html"`
 		Policy     string   `long:"policy" description:"CSP to use" default:"default-src 'self'; style-src 'self' 'nonce-CSP_NONCE'; script-src 'self' 'nonce-CSP_NONCE'"`
 	} `group:"csp-nonce" namespace:"csp"`
+
+	Otel struct {
+		Endpoint          string `long:"endpoint" description:"Open Telemetry Collectore Endpoint"`
+		ServiceName       string `long:"name" description:"Service name to report" default:"angular-to-http"`
+		ServiceInstanceID string `long:"instance" description:"Service Instance ID, if empty hostname will be used"`
+	} `group:"otel" namespace:"otel"`
 
 	Args struct {
 		Directory string `description:"directory to serve (default: '.')" positional-arg-name:"directory"`

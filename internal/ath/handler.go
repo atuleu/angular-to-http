@@ -1,30 +1,23 @@
 package ath
 
 import (
-	"io"
-	"log"
 	"net/http"
-	"os"
+
+	"github.com/sirupsen/logrus"
 )
 
 type Handler struct {
 	routes map[string]Route
-	info   *log.Logger
 }
 
-func NewHandler(routes map[string]Route, withInfo bool) *Handler {
-	var info *log.Logger
-	if withInfo == true {
-		info = log.New(os.Stderr, "[INFO] ", 0)
-	} else {
-		info = log.New(io.Discard, "", 0)
-	}
-
+func NewHandler(routes map[string]Route) *Handler {
 	if routes == nil {
 		routes = make(map[string]Route)
 	}
 
-	return &Handler{routes: routes, info: info}
+	return &Handler{
+		routes: routes,
+	}
 }
 
 type loggingResponseWriter struct {
@@ -37,18 +30,25 @@ func (w *loggingResponseWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+func (h *Handler) log(req *http.Request) *logrus.Entry {
+	return logrus.WithFields(logrus.Fields{
+		"method":     req.Method,
+		"URL":        req.URL,
+		"address":    req.RemoteAddr,
+		"user-agent": req.UserAgent(),
+	})
+}
+
 func (h *Handler) ServeHTTP(w_ http.ResponseWriter, req *http.Request) {
 	w := &loggingResponseWriter{w_, 0}
+	log := h.log(req)
 	defer func() {
-		h.info.Printf("%s \"%s\" from %s as \"%s\": %d",
-			req.Method, req.URL,
-			req.RemoteAddr, req.UserAgent(),
-			w.status)
+		log.WithField("status", w.status).Info("request")
 	}()
 
 	route, ok := h.routes[req.URL.Path]
 	if ok == false {
-		h.info.Printf("redirecting to '/index.html'")
+		log.Info("redirecting to '/index.html'")
 		route, ok = h.routes["/index.html"]
 	}
 
@@ -61,7 +61,5 @@ func (h *Handler) ServeHTTP(w_ http.ResponseWriter, req *http.Request) {
 }
 
 func init() {
-	log.SetOutput(os.Stderr)
-	log.SetFlags(0)
-	log.SetPrefix("[WARNING] ")
+	logrus.SetLevel(logrus.WarnLevel)
 }

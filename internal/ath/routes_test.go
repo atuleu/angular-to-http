@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -13,6 +12,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/test"
 	"golang.org/x/exp/constraints"
 	. "gopkg.in/check.v1"
 )
@@ -66,6 +67,7 @@ type RoutesSuite struct {
 	dir      string
 	filepath string
 	content  string
+	hook     *test.Hook
 }
 
 var _ = Suite(&RoutesSuite{})
@@ -81,6 +83,12 @@ func (s *RoutesSuite) SetUpSuite(c *C) {
 </html>`
 	s.filepath = filepath.Join(s.dir, "index.html")
 	c.Assert(ioutil.WriteFile(s.filepath, []byte(s.content), 0644), IsNil)
+	_, s.hook = test.NewNullLogger()
+	logrus.AddHook(s.hook)
+}
+
+func (s *RoutesSuite) SetUpTest(c *C) {
+	s.hook.Reset()
 }
 
 func (s *RoutesSuite) TestRouteFlags(c *C) {
@@ -293,16 +301,20 @@ func (s *RoutesSuite) TestStaticRouteFailure(c *C) {
 	req, err := http.NewRequest("GET", "/index.html", bytes.NewBuffer(nil))
 	c.Assert(err, IsNil)
 	w := NewMockResponseWritter()
-	logBuffer := bytes.NewBuffer(nil)
-	log.SetOutput(logBuffer)
+
 	r.ServeHTTP(w, req)
 	c.Check(string(w.buffer.Bytes()), Equals, "HTTP/1.1 500 Ok\r\n"+
 		"Content-Type: text/plain; charset=utf-8\r\n"+
 		"X-Content-Type-Options: nosniff\r\n"+
 		"\r\n"+
 		"read error\n")
-	rx := regexp.MustCompile(`\Q[WARNING]\E open .*/do-not-exists: no such file or directory`)
-	c.Check(rx.Match(logBuffer.Bytes()), Equals, true)
+
+	c.Assert(s.hook.Entries, HasLen, 1)
+	c.Check(s.hook.Entries[0].Level, Equals, logrus.ErrorLevel)
+	c.Check(s.hook.Entries[0].Message, Matches, "could not read route")
+	c.Check(s.hook.Entries[0].Data["error"], ErrorMatches, `open .*: no such file or directory`)
+	c.Check(s.hook.Entries[0].Data["filepath"], Matches, ".*/do-not-exists")
+	c.Check(s.hook.Entries[0].Data["compression"], Matches, "")
 
 }
 
@@ -387,8 +399,6 @@ func (s *RoutesSuite) TestNoncedRouteFailure(c *C) {
 	req, err := http.NewRequest("GET", "/index.html", bytes.NewBuffer(nil))
 	w := NewMockResponseWritter()
 	c.Assert(err, IsNil)
-	logBuffer := bytes.NewBuffer(nil)
-	log.SetOutput(logBuffer)
 
 	r.ServeHTTP(w, req)
 	c.Check(w.buffer.Bytes(), ResponseMatches, []string{"HTTP/1.1 500 Ok",
@@ -397,14 +407,17 @@ func (s *RoutesSuite) TestNoncedRouteFailure(c *C) {
 		"",
 		"internal server error"})
 
-	c.Check(logBuffer.Bytes(), ResponseMatches, `\Q[WARNING]\E could not execute response template for index\.html: template: content:.*: executing "content" at <\.N>`)
+	c.Assert(s.hook.Entries, HasLen, 1)
+	c.Check(s.hook.Entries[0].Level, Equals, logrus.ErrorLevel)
+	c.Check(s.hook.Entries[0].Message, Matches, "could not execute response template")
+	c.Check(s.hook.Entries[0].Data["error"], ErrorMatches, `template: content:.*: executing "content" at \<\.N\>: .*`)
+	c.Check(s.hook.Entries[0].Data["route"], Matches, `index.html`)
 
 	tmpl = template.Must(tmpl.New("content").Parse(`<html><head><script nonce="{{.Nonce}}"></script></head><body></body></html>`))
 	r.template = tmpl
 
 	w = NewMockResponseWritter()
-	logBuffer = bytes.NewBuffer(nil)
-	log.SetOutput(logBuffer)
+	s.hook.Reset()
 
 	r.ServeHTTP(w, req)
 	c.Check(w.buffer.Bytes(), ResponseMatches, []string{"HTTP/1.1 500 Ok",
@@ -413,6 +426,10 @@ func (s *RoutesSuite) TestNoncedRouteFailure(c *C) {
 		"",
 		"internal server error"})
 
-	c.Check(logBuffer.Bytes(), ResponseMatches, `\Q[WARNING]\E could not execute CSP template for index\.html: template: CSP:.*: executing "CSP" at <\.N>`)
+	c.Assert(s.hook.Entries, HasLen, 1)
+	c.Check(s.hook.Entries[0].Level, Equals, logrus.ErrorLevel)
+	c.Check(s.hook.Entries[0].Message, Matches, "could not execute CSP template")
+	c.Check(s.hook.Entries[0].Data["error"], ErrorMatches, `template: CSP:.*: executing "CSP" at \<\.N\>: .*`)
+	c.Check(s.hook.Entries[0].Data["route"], Matches, `index.html`)
 
 }

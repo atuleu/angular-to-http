@@ -5,12 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 type RouteFlag int
@@ -75,9 +76,15 @@ func (r StaticRoute) Flags() RouteFlag {
 
 func (r StaticRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	comp := r.findCompression(req)
-	data, err := r.cache.Get(comp.AddExtension(r.filepath), r.readFile(comp))
+	compFilename := comp.AddExtension(r.filepath)
+	data, err := r.cache.Get(compFilename, r.readFile(comp))
 	if err != nil {
-		log.Printf("%s", err)
+
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"filepath":    r.filepath,
+			"compression": comp.AddExtension(""),
+		}).Error("could not read route")
+
 		http.Error(w, "read error", http.StatusInternalServerError)
 		return
 	}
@@ -136,8 +143,11 @@ type NoncedRoute struct {
 
 func (r NoncedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	nonce, err := r.generateNonce()
+	log := logrus.WithField("route", r.name)
 	if err != nil {
-		log.Printf("could not generate nonce: %s", err)
+		log.WithError(err).
+			Error("could not generate nonce")
+
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -150,20 +160,20 @@ func (r NoncedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	compWriter := comp.Wrap(response)
 	err = r.template.ExecuteTemplate(compWriter, "content", nonce)
 	if err != nil {
-		log.Printf("could not execute response template for %s: %s", r.name, err)
+		log.WithError(err).Error("could not execute response template")
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	err = compWriter.Close()
 	if err != nil {
-		log.Printf("could not compress response for %s: %s", r.name, err)
+		log.WithError(err).Error("could not compress response")
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	err = r.template.ExecuteTemplate(csp, "CSP", nonce)
 	if err != nil {
-		log.Printf("could not execute CSP template for %s: %s", r.name, err)
+		log.WithError(err).Error("could not execute CSP template")
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}

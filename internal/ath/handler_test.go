@@ -2,34 +2,38 @@ package ath
 
 import (
 	"bytes"
-	"io"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"path/filepath"
 
+	"github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/test"
 	. "gopkg.in/check.v1"
 )
 
 type HandlerSuite struct {
+	hook *test.Hook
 }
 
 var _ = Suite(&HandlerSuite{})
 
-func (s *HandlerSuite) TestInfoLog(c *C) {
-	h := NewHandler(nil, false)
-	c.Assert(h.info, Not(IsNil))
-	c.Check(h.info.Writer(), Equals, io.Discard)
+func (s *HandlerSuite) SetUpSuite(c *C) {
+	_, s.hook = test.NewNullLogger()
+	logrus.AddHook(s.hook)
+}
 
-	h = NewHandler(nil, true)
-	c.Assert(h.info, Not(IsNil))
-	c.Check(h.info.Writer(), Equals, os.Stderr)
+func (s *HandlerSuite) SetUpTest(c *C) {
+	s.hook.Reset()
+	logrus.SetLevel(logrus.InfoLevel)
+}
+
+func (s *HandlerSuite) TearDownTest(c *C) {
+	s.hook.Reset()
+	logrus.SetLevel(logrus.WarnLevel)
 }
 
 func (s *HandlerSuite) TestEmptyRouting(c *C) {
-	h := NewHandler(nil, true)
-	info := bytes.NewBuffer(nil)
-	h.info.SetOutput(info)
+	h := NewHandler(nil)
 
 	w := NewMockResponseWritter()
 	req, err := http.NewRequest("GET", "/", bytes.NewBuffer(nil))
@@ -45,15 +49,16 @@ func (s *HandlerSuite) TestEmptyRouting(c *C) {
 		"not found",
 	})
 
-	c.Check(string(info.Bytes()), ResponseMatches, `\Q[INFO]\E redirecting to '/index.html'
-\Q[INFO]\E GET "/" from .* as ".*": 404`)
+	c.Assert(s.hook.Entries, HasLen, 2)
+	c.Check(s.hook.Entries[0].Level, Equals, logrus.InfoLevel)
+	c.Check(s.hook.Entries[0].Message, Matches, "redirecting to '/index.html'")
+	c.Check(s.hook.Entries[1].Level, Equals, logrus.InfoLevel)
+	c.Check(s.hook.Entries[1].Message, Matches, "request")
 
 }
 
 func (s *HandlerSuite) TestPostMethod(c *C) {
-	h := NewHandler(nil, true)
-	info := bytes.NewBuffer(nil)
-	h.info.SetOutput(info)
+	h := NewHandler(nil)
 
 	w := NewMockResponseWritter()
 	req, err := http.NewRequest("POST", "/index.html", bytes.NewBuffer(nil))
@@ -69,7 +74,13 @@ func (s *HandlerSuite) TestPostMethod(c *C) {
 		"not found",
 	})
 
-	c.Check(string(info.Bytes()), ResponseMatches, `\Q[INFO]\E POST "/index.html" from .* as ".*": 404`)
+	c.Assert(s.hook.Entries, HasLen, 2)
+
+	c.Check(s.hook.Entries[0].Level, Equals, logrus.InfoLevel)
+	c.Check(s.hook.Entries[0].Message, Matches, "redirecting to '/index.html'")
+	c.Check(s.hook.Entries[1].Level, Equals, logrus.InfoLevel)
+	c.Check(s.hook.Entries[1].Message, Matches, "request")
+	c.Check(s.hook.Entries[1].Data["status"], Equals, 404)
 
 }
 
@@ -85,9 +96,7 @@ func (s *HandlerSuite) TestStaticRoute(c *C) {
 			cache:        NewCache(-1),
 		},
 	}
-	h := NewHandler(routes, true)
-	info := bytes.NewBuffer(nil)
-	h.info.SetOutput(info)
+	h := NewHandler(routes)
 
 	w := NewMockResponseWritter()
 	req, err := http.NewRequest("GET", "/index.html", bytes.NewBuffer(nil))
@@ -105,6 +114,9 @@ func (s *HandlerSuite) TestStaticRoute(c *C) {
 		"<html><head/><body/></html>",
 	})
 
-	c.Check(string(info.Bytes()), ResponseMatches, `\Q[INFO]\E GET "/index.html" from .* as ".*": 200`)
+	c.Assert(s.hook.Entries, HasLen, 1)
+	c.Check(s.hook.Entries[0].Level, Equals, logrus.InfoLevel)
+	c.Check(s.hook.Entries[0].Message, Matches, "request")
+	c.Check(s.hook.Entries[0].Data["status"], Equals, 200)
 
 }
